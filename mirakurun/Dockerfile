@@ -1,58 +1,40 @@
-FROM node:10-alpine
-LABEL maintainer "h-mineta <h-mineta@0nyx.net>"
-
+FROM node:10-stretch-slim
+LABEL maintainer="h-mineta <h-mineta@0nyx.net>, Mirai Kim <me@euc-kr.net>"
 ENV DOCKER="YES"
-
 RUN set -x \
-	&& apk upgrade --update \
-	&& apk add \
+	&& apt-get update \
+	&& apt-get install -y \
 		bash \
 		coreutils \
-		libusb \
-		pcsc-lite \
-		pcsc-lite-libs \
+		libusb-1.0-0-dev \
+		libpcsclite1 \
+		libpcsclite-dev \
+		pcscd \
 		curl \
+		wget \
+		unzip \
 		ca-certificates \
 		util-linux \
-	\
-	&& apk add --virtual .build-deps \
+	&& apt-get install --no-install-recommends -y \
 		git \
 		make \
+		cmake \
 		gcc \
 		g++ \
 		gzip \
 		autoconf \
 		automake \
+		pkg-config \
 		libc-dev \
 		musl-dev \
-		eudev-dev \
 		libevent-dev \
-		pcsc-lite-dev \
 		libusb-dev \
 		libtool\
 		flex\
-	\
 	&& npm install pm2 -g \
-	\
 	&& npm install arib-b25-stream-test -g --unsafe \
-	\
 	# mirakurun
 	&& npm install mirakurun@latest -g --unsafe --production \
-	\
-	# recpt1
-	&& git clone https://github.com/stz2012/recpt1 /tmp/recpt1 \
-	&& cd /tmp/recpt1/recpt1 \
-	&& ./autogen.sh \
-	&& ./configure \
-	&& sed -i '/#include <sys\/msg.h>/d' recpt1core.h \
-	&& sed -i -E 's!(#include <sys/msg.h>)!#undef _GNU_SOURCE\n#undef _BSD_SOURCE\n\1!' recpt1.c \
-	&& sed -i -E 's!(#include <sys/msg.h>)!#undef _GNU_SOURCE\n#undef _BSD_SOURCE\n\1!' recpt1ctl.c \
-	&& sed -i -E 's!(#include <sys/msg.h>)!#undef _GNU_SOURCE\n#undef _BSD_SOURCE\n\1!' checksignal.c \
-	&& sed -i -E 's!(#include <ctype.h>)!\1\n#include <event.h>!' tssplitter_lite.c \
-	&& sed -i 's#-I../driver#-I../driver -I/usr/local/include#' Makefile \
-	&& make \
-	&& make install \
-	\
 	# ccid
 	&& cd /tmp \
 	&& git clone --recursive https://salsa.debian.org/rousseau/CCID.git \
@@ -61,22 +43,35 @@ RUN set -x \
 	&& ./configure \
 	&& make \
 	&& make install \
-	\
+	# libarib25
+	&& wget https://github.com/stz2012/libarib25/archive/master.zip -O /tmp/libarib25.zip \
+	&& unzip /tmp/libarib25.zip -d /tmp/ \
+	&& cd /tmp/libarib25-master \
+	&& cmake . \
+	&& make \
+	&& make install \
+	# recdvb
+	&& wget http://www13.plala.or.jp/sat/recdvb/recdvb-1.3.2.tgz -O /tmp/recdvb.tgz \
+	&& mkdir /tmp/recdvb \
+	&& tar xvzf /tmp/recdvb.tgz --strip-components=1 -C /tmp/recdvb \
+	&& cd /tmp/recdvb \
+	&& ./autogen.sh \
+	&& ./configure --enable-b25 \
+	&& make \
+	&& EXTRA_SID=1 make \
+	&& make install \
 	# cleaning
 	&& cd / \
 	&& npm cache verify \
-	&& apk del --purge .build-deps \
+	&& apt-get clean \
+ 	&& rm -rf /var/lib/apt/lists/* \
 	#&& rm -rf /tmp/* \
-	&& rm -rf /tmp/recpt1 \
-	&& rm -rf /tmp/ccid-* \
-	&& rm -rf /var/cache/apk/*
-
+	&& rm -rf /tmp/recdvb* \
+	&& rm -rf /tmp/ccid-*
 	# forward request and error logs to docker log collector
 	#&& ln -sf /dev/stdout /usr/local/var/log/mirakurun.stdout-0.log \
 	#&& ln -sf /dev/stderr /usr/local/var/log/mirakurun.stderr-0.log
-
 COPY services.sh /usr/local/bin
-
 WORKDIR /usr/local/lib/node_modules/mirakurun
 CMD ["/usr/local/bin/services.sh"]
 EXPOSE 40772
